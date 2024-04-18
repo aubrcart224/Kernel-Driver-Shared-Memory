@@ -1,9 +1,23 @@
+
 #include "main.h"
 #include <ntifs.h>
 #include <ntddk.h>
 #include <ntstrsafe.h>
-#include <ntddk.h>
+
 #include <ntdddisk.h>
+
+// Constants
+#define SHARED_MEMORY_SIZE 10240  // 1024 * 10, increased clarity
+#define DEVICE_NAME L"\\Device\\ShMem_Test"
+#define DEVICE_SYMLINK L"\\DosDevices\\ShMem_Test"
+#define SHARED_SECTION_NAME L"\\BaseNamedObjects\\SharedMemoryTest"
+
+
+// Global variables // reset values to NULL 
+PVOID g_pSharedSection = NULL; // shared memory section
+HANDLE g_hSection = NULL; // handle to the shared memory section
+PVOID g_SharedMemory = NULL; // shared memory pointer
+PVOID	g_pSectionObj = NULL; // section object pointer
 
 
 // Function prototypes
@@ -11,21 +25,7 @@ const WCHAR gc_wszDeviceNameBuffer[] = L"\\Device\\ShMem_Test";
 const WCHAR gc_wszDeviceSymLinkBuffer[] = L"\\DosDevices\\ShMem_Test";
 const WCHAR gc_wszSharedSectionName[] = L"\\BaseNamedObjects\\SharedMemoryTest";
 
-
-//reset values
-PVOID	g_pSharedSection = NULL;
-PVOID	g_pSectionObj = NULL;
-HANDLE	g_hSection = NULL;
-
 //----------------------------------------------------------------------   
-
-// Define the size of the shared memory
-#define SHARED_MEMORY_SIZE 1024
-
-// Global pointer to the shared memory
-PVOID g_SharedMemory = NULL;
-
-
 
 // Read from the shared memory
 VOID ReadSharedMemory() {
@@ -132,6 +132,127 @@ NTSTATUS CreateSharedMemory() {
 
 }
 
+// Create a security descriptor and ACL for the shared memory
+NTSTATUS OnIRPWrite(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
+{
+    UNREFERENCED_PARAMETER(pDriverObject);
+
+    char szBuffer[255] = { 0 };
+    strcpy(szBuffer, pIrp->AssociatedIrp.SystemBuffer);
+    DbgPrint("User message received: %s(%u)", szBuffer, strlen(szBuffer));
+
+    if (!strcmp(szBuffer, "read_shared_memory"))
+    {
+        ReadSharedMemory();
+    }
+
+    pIrp->IoStatus.Status = STATUS_SUCCESS;
+    pIrp->IoStatus.Information = strlen(szBuffer);
+    IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+    return STATUS_SUCCESS;
+}
+
+// Create a security descriptor and ACL for the shared memory
+NTSTATUS OnMajorFunctionCall(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
+{
+    UNREFERENCED_PARAMETER(pDriverObject);
+
+    PIO_STACK_LOCATION pStack = IoGetCurrentIrpStackLocation(pIrp);
+    switch (pStack->MajorFunction)
+    {
+    case IRP_MJ_WRITE:
+        OnIRPWrite(pDriverObject, pIrp);
+        break;
+
+    default:
+        pIrp->IoStatus.Status = STATUS_SUCCESS;
+        IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+    }
+    return STATUS_SUCCESS;
+}
+
+
+NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject, IN PUNICODE_STRING pRegistryPath) 
+{
+    // Process params
+    UNREFERENCED_PARAMETER(pRegistryPath);
+
+    if (!pDriverObject)
+    {
+        DbgPrint("ShareMemTestSys driver entry is null!\n");
+        return STATUS_FAILED_DRIVER_ENTRY;
+    }
+
+    // Hello world!
+    DbgPrint("Driver loaded, system range start in %p, Our entry at: %p\n", MmSystemRangeStart, DriverEntry);
+
+    // Register unload routine
+    pDriverObject->DriverUnload = &OnDriverUnload;
+
+    // Veriable decleration
+    NTSTATUS ntStatus = 0;
+
+    // Normalize name and symbolic link.
+    UNICODE_STRING deviceNameUnicodeString, deviceSymLinkUnicodeString;
+    RtlInitUnicodeString(&deviceNameUnicodeString, gc_wszDeviceNameBuffer);
+    RtlInitUnicodeString(&deviceSymLinkUnicodeString, gc_wszDeviceSymLinkBuffer);
+
+    // Create the device.
+    PDEVICE_OBJECT pDeviceObject = NULL;
+    ntStatus = IoCreateDevice(pDriverObject, 0, &deviceNameUnicodeString, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &pDeviceObject);
+    if (ntStatus != STATUS_SUCCESS)
+    {
+        DbgPrint("ShareMemTestSys IoCreateDevice fail! Status: %p\n", ntStatus);
+        return ntStatus;
+    }
+
+    // Create the symbolic link
+    ntStatus = IoCreateSymbolicLink(&deviceSymLinkUnicodeString, &deviceNameUnicodeString);
+    if (ntStatus != STATUS_SUCCESS)
+    {
+        DbgPrint("ShareMemTestSys IoCreateSymbolicLink fail! Status: %p\n", ntStatus);
+        return ntStatus;
+    }
+
+    // Register driver major callbacks
+    for (ULONG t = 0; t <= IRP_MJ_MAXIMUM_FUNCTION; t++)
+        pDriverObject->MajorFunction[t] = &OnMajorFunctionCall;
+
+    CreateSharedMemory();
+
+    pDeviceObject->Flags |= DO_BUFFERED_IO;
+
+    DbgPrint("ShareMemTestSys driver entry completed!\n");
+
+    return STATUS_SUCCESS;
+}
+
+
+
+VOID OnDriverUnload(IN PDRIVER_OBJECT pDriverObject)
+{
+    UNREFERENCED_PARAMETER(pDriverObject);
+
+    DbgPrint("Driver unload routine triggered!\n");
+
+    if (g_pSharedSection)
+        ZwUnmapViewOfSection(NtCurrentProcess(), g_pSharedSection);
+
+    if (g_pSectionObj)
+        ObDereferenceObject(g_pSectionObj);
+
+    if (g_hSection)
+        ZwClose(g_hSection);
+
+    UNICODE_STRING symLink;
+    RtlInitUnicodeString(&symLink, gc_wszDeviceSymLinkBuffer);
+
+    IoDeleteSymbolicLink(&symLink);
+    if (pDriverObject && pDriverObject->DeviceObject)
+    {
+        IoDeleteDevice(pDriverObject->DeviceObject);
+    }
+}
 
 
 
