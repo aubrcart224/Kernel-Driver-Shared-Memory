@@ -31,30 +31,35 @@ const WCHAR gc_wszSharedSectionName[] = L"\\BaseNamedObjects\\SharedMemoryTest";
 VOID ReadSharedMemory() {
 	
     //initialize shared memory
-    if (!g_hSection)
+    if (!g_hSection) {
+        DbgPrint("Shared memory handle is not initialized.\n");
         return;
+	}
 
-    //check if mem is mapped /= NULL 
-    if (g_pSharedSection)
-        ZwUnmapViewOfSection(NtCurrentProcess(), g_pSharedSection);// unmap shared mem, return handle, specify unmap process
-
+    // Unmap shared memory if already mapped
+    if (g_pSharedSection) {
+        NTSTATUS unmapStatus = ZwUnmapViewOfSection(NtCurrentProcess(), g_pSharedSection); 
+        //ZwUnmapViewOfSection(NtCurrentProcess(), g_pSharedSection);// unmap shared mem, return handle, specify unmap process
+        if (unmapStatus != STATUS_SUCCESS) {
+            DbgPrint("Failed to unmap shared memory: %p\n", unmapStatus);
+            return;
+        }
+        g_pSharedSection = NULL; //clear pointer after unmapping
+    }
     else {
-
-    DbgPrint(("Reading from shared memory: %s\n", (PCHAR)g_SharedMemory));
-    SIZE_T ulViewSize = 1024 * 10;
-    NTSTATUS ntStatus = ZwMapViewOfSection(g_hSection, NtCurrentProcess(), &g_pSharedSection, 0, ulViewSize, NULL, &ulViewSize, ViewShare, 0, PAGE_READWRITE | PAGE_NOCACHE);
-    if (ntStatus != STATUS_SUCCESS)
-    {
-        DbgPrint("ZwMapViewOfSection fail! Status: %p\n", ntStatus);
-        ZwClose(g_hSection);
-        return;
+        //map shared memory
+        DbgPrint(("Reading from shared memory: %s\n", (PCHAR)g_SharedMemory));
+        SIZE_T ulViewSize = 10240; // 1024 * 10
+        NTSTATUS ntStatus = ZwMapViewOfSection(g_hSection, NtCurrentProcess(), &g_pSharedSection, 0, ulViewSize, NULL, &ulViewSize, ViewShare, 0, PAGE_READWRITE | PAGE_NOCACHE);
+        if (ntStatus != STATUS_SUCCESS)
+        {
+            DbgPrint("ZwMapViewOfSection fail! Status: %p\n", ntStatus);
+            ZwClose(g_hSection);
+            return;
+        }
+        DbgPrint("ZwMapViewOfSection completed!\n");
+        DbgPrint("Shared memory read data: %s\n", (PCHAR)g_pSharedSection);
     }
-    DbgPrint("ZwMapViewOfSection completed!\n");
-
-    DbgPrint("Shared memory read data: %s\n", (PCHAR)g_pSharedSection);
-
-    }
-
 }
 	
 
@@ -64,15 +69,13 @@ NTSTATUS CreateSharedMemory() {
     //------------------mostly mapping stuff---------------------
 
      NTSTATUS ntStatus = STATUS_UNSUCCESSFUL;
-    
      UNICODE_STRING uSectionName = { 0 };
      RtlInitUnicodeString(&uSectionName, gc_wszSharedSectionName);
-
      OBJECT_ATTRIBUTES objAttr = { 0 };
      InitializeObjectAttributes(&objAttr, &uSectionName, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
 
      //create section
-     LARGE_INTEGER lMaxSize = { 0 }; 
+     LARGE_INTEGER lMaxSize; 
      lMaxSize.HighPart = 0; 
      lMaxSize.LowPart = 1024 * 10; 
      ntStatus = ZwCreateSection(&g_hSection, SECTION_ALL_ACCESS, &objAttr, &lMaxSize, PAGE_READWRITE, SEC_COMMIT, NULL);
