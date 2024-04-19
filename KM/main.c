@@ -38,7 +38,9 @@ VOID ReadSharedMemory() {
     if (g_pSharedSection)
         ZwUnmapViewOfSection(NtCurrentProcess(), g_pSharedSection);// unmap shared mem, return handle, specify unmap process
 
-    KdPrint(("Reading from shared memory: %s\n", (PCHAR)g_SharedMemory))
+    else {
+
+    DbgPrint(("Reading from shared memory: %s\n", (PCHAR)g_SharedMemory));
     SIZE_T ulViewSize = 1024 * 10;
     NTSTATUS ntStatus = ZwMapViewOfSection(g_hSection, NtCurrentProcess(), &g_pSharedSection, 0, ulViewSize, NULL, &ulViewSize, ViewShare, 0, PAGE_READWRITE | PAGE_NOCACHE);
     if (ntStatus != STATUS_SUCCESS)
@@ -51,7 +53,7 @@ VOID ReadSharedMemory() {
 
     DbgPrint("Shared memory read data: %s\n", (PCHAR)g_pSharedSection);
 
-
+    }
 
 }
 	
@@ -255,30 +257,6 @@ VOID OnDriverUnload(IN PDRIVER_OBJECT pDriverObject)
 }
 
 
-
-
-
-NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING RegistryPath) {
-    
-    DriverObject->DriverUnload = DriverUnload;
-    KdPrint(("Driver Entry called\n"));
-
-    // Initialize shared memory
-    NTSTATUS status = InitializeSharedMemory(DriverObject);
-
-    if (!NT_SUCCESS(status)) {
-        // Handle error
-        return status;
-    }
-
-    // Rest of driver entry code...
-    //shared memory space implementation 
-
-    return STATUS_SUCCESS;
-}
-
-
-
 //shared mem space implementation
 NTSTATUS InitializeSharedMemory(_In_ PDRIVER_OBJECT DriverObject) {
     UNREFERENCED_PARAMETER(DriverObject);
@@ -330,7 +308,7 @@ NTSTATUS InitializeSharedMemory(_In_ PDRIVER_OBJECT DriverObject) {
     ZwClose(sectionHandle);
 
     // The shared memory is now available at g_SharedMemory
-    KdPrint(("Shared memory initialized at address: %p\n", g_SharedMemory));
+    DbgPrint(("Shared memory initialized at address: %p\n", g_SharedMemory));
 
     return STATUS_SUCCESS;
 }
@@ -338,12 +316,9 @@ NTSTATUS InitializeSharedMemory(_In_ PDRIVER_OBJECT DriverObject) {
 
 
 
-
-
-
 void DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
     UNREFERENCED_PARAMETER(DriverObject);
-    KdPrint(("Driver Unload called\n"));
+    DbgPrint(("Driver Unload called\n"));
 
     // Clean up the shared memory
     if (g_SharedMemory) {
