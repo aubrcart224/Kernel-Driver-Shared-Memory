@@ -12,21 +12,18 @@
 #define DEVICE_SYMLINK L"\\DosDevices\\ShMem_Test"
 #define SHARED_SECTION_NAME L"\\BaseNamedObjects\\SharedMemoryTest"
 
-
 // Global variables // reset values to NULL 
 PVOID g_pSharedSection = NULL; // shared memory section
 HANDLE g_hSection = NULL; // handle to the shared memory section
 PVOID g_SharedMemory = NULL; // shared memory pointer
 PVOID	g_pSectionObj = NULL; // section object pointer
 
-
 // Function prototypes
 const WCHAR gc_wszDeviceNameBuffer[] = L"\\Device\\ShMem_Test";
 const WCHAR gc_wszDeviceSymLinkBuffer[] = L"\\DosDevices\\ShMem_Test";
 const WCHAR gc_wszSharedSectionName[] = L"\\BaseNamedObjects\\SharedMemoryTest";
 
-//----------------- Functions -------------------------------------   
-
+//----------------- Functions -------------------------------------//   
 
 NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject, IN PUNICODE_STRING pRegistryPath)
 {
@@ -83,8 +80,6 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject, IN PUNICODE_STRING pRegist
     return STATUS_SUCCESS;
 }
 
-
-
 //shared mem space implementation
 NTSTATUS InitializeSharedMemory(_In_ PDRIVER_OBJECT DriverObject) {
     UNREFERENCED_PARAMETER(DriverObject);
@@ -140,8 +135,6 @@ NTSTATUS InitializeSharedMemory(_In_ PDRIVER_OBJECT DriverObject) {
 
     return STATUS_SUCCESS;
 }
-
-
 
 NTSTATUS CreateSharedMemory() {
 
@@ -221,12 +214,8 @@ NTSTATUS CreateSharedMemory() {
     return ntStatus;
 }
 
-
-
 //maybe make a fucntion to call here top map shared memory
 NTSTATUS MapSharedMemory() {}
-
-
 
 // Read from the shared memory
 VOID ReadSharedMemory() {
@@ -266,16 +255,14 @@ VOID ReadSharedMemory() {
 NTSTATUS WriteSharedMemory(PVOID Data, SIZE_T Size) {
 }
 
-
-
 NTSTATUS InitializeSecurityDescriptor() {
     PSECURITY_DESCRIPTOR pSecurityDescriptor;
-    pSecurityDescriptor = ExAllocatePoolWithTag(NonPagedPool, SECURITY_DESCRIPTOR_MIN_LENGTH, 'sdct');
-    
-    
+    NTSTATUS status;
+
+
     // Allocate memory for the security descriptor
-    pSecurityDescriptor = ExAllocatePoolWithTag(NonPagedPoolNx, SECURITY_DESCRIPTOR_MIN_LENGTH, 'sdct'); 
-    if (!pSecurityDescriptor){
+    pSecurityDescriptor = ExAllocatePoolWithTag(NonPagedPoolNx, SECURITY_DESCRIPTOR_MIN_LENGTH, 'sdct');
+    if (!pSecurityDescriptor) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -285,19 +272,26 @@ NTSTATUS InitializeSecurityDescriptor() {
 
 
     // setup ALCs, SIDs, etc. // might move to another function later 
-    NTSTATUS status = RtlCreateSecurityDescriptor(pSecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);
+    status = SetupSecurityAttributes(pSecurityDescriptor); // call function to set up security attributes
+
     if (!NT_SUCCESS(status)) {
         ExFreePool(pSecurityDescriptor);
         return status;
     }
 
     // Set up ACLs, SIDs, etc., here
+    //NTSTATUS status = RtlCreateSecurityDescriptor(pSecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);
 
-    return STATUS_SUCCESS;
+    NTSTATUS SetupSecurityAttributes(PSECURITY_DESCRIPTOR pSecurityDescriptor); {
+        // Assuming implementation exists that creates and sets SIDs and ACLs
+        // This function should handle all necessary security setup for the shared memory
+        return STATUS_SUCCESS;
+
+    }
+
+
 }
-
-
-
+    
 // Create a security descriptor and ACL for the shared memory
 NTSTATUS OnIRPWrite(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
 {
@@ -305,12 +299,25 @@ NTSTATUS OnIRPWrite(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
 
     char szBuffer[255] = { 0 };
     strcpy(szBuffer, pIrp->AssociatedIrp.SystemBuffer);
+    strncpy(szBuffer, pIrp->AssociatedIrp.SystemBuffer, sizeof(szBuffer) - 1); // Secure copying
     DbgPrint("User message received: %s(%u)", szBuffer, strlen(szBuffer));
-
+    
     if (!strcmp(szBuffer, "read_shared_memory"))
     {
         ReadSharedMemory();
     }
+    
+    //maybe use this idk yet 
+    if (!strncmp(szBuffer, "read_shared_memory", sizeof(szBuffer)))
+    {
+        // Assuming ReadSharedMemory returns an NTSTATUS
+        ReadSharedMemory(); // call function to read shared memory
+        NTSTATUS status = ReadSharedMemory();
+        if (!NT_SUCCESS(status)) {
+            return status;
+        }
+    }
+    
 
     pIrp->IoStatus.Status = STATUS_SUCCESS;
     pIrp->IoStatus.Information = strlen(szBuffer);
@@ -318,15 +325,14 @@ NTSTATUS OnIRPWrite(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
     return STATUS_SUCCESS;
 }
 
-
-
-
 // Create a security descriptor and ACL for the shared memory
 NTSTATUS OnMajorFunctionCall(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
 {
     UNREFERENCED_PARAMETER(pDriverObject);
 
     PIO_STACK_LOCATION pStack = IoGetCurrentIrpStackLocation(pIrp);
+    NTSTATUS status = STATUS_SUCCESS;
+
     switch (pStack->MajorFunction)
     {
     case IRP_MJ_WRITE:
@@ -336,12 +342,10 @@ NTSTATUS OnMajorFunctionCall(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
     default:
         pIrp->IoStatus.Status = STATUS_SUCCESS;
         IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+        break;
     }
-    return STATUS_SUCCESS;
+    return status;
 }
-
-
-
 
 VOID OnDriverUnload(IN PDRIVER_OBJECT pDriverObject)
 {
@@ -367,5 +371,3 @@ VOID OnDriverUnload(IN PDRIVER_OBJECT pDriverObject)
         g_hSection = NULL;
 	}
 }
-
-
