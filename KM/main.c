@@ -214,7 +214,7 @@ NTSTATUS CreateSharedMemory() {
     return ntStatus;
 }
 
-//maybe make a fucntion to call here top map shared memory
+//maybe make a fucntion to call here top map shared memory 
 NTSTATUS MapSharedMemory() {}
 
 // Read from the shared memory
@@ -251,10 +251,12 @@ VOID ReadSharedMemory() {
         DbgPrint("Shared memory read data: %s\n", (PCHAR)g_pSharedSection);
     }
 }
-	
+
+//dead func for now writing is a dectection vector 
 NTSTATUS WriteSharedMemory(PVOID Data, SIZE_T Size) {
 }
 
+// Initialize the security descriptor for the shared memory
 NTSTATUS InitializeSecurityDescriptor() {
     PSECURITY_DESCRIPTOR pSecurityDescriptor;
     NTSTATUS status;
@@ -298,17 +300,17 @@ NTSTATUS OnIRPWrite(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
     UNREFERENCED_PARAMETER(pDriverObject);
 
     char szBuffer[255] = { 0 };
-    strcpy(szBuffer, pIrp->AssociatedIrp.SystemBuffer);
     strncpy(szBuffer, pIrp->AssociatedIrp.SystemBuffer, sizeof(szBuffer) - 1); // Secure copying
     DbgPrint("User message received: %s(%u)", szBuffer, strlen(szBuffer));
-    
+    /*
     if (!strcmp(szBuffer, "read_shared_memory"))
     {
         ReadSharedMemory();
     }
-    
+    */
+
     //maybe use this idk yet 
-    if (!strncmp(szBuffer, "read_shared_memory", sizeof(szBuffer)))
+    if (!strncmp(szBuffer, "read_shared_memory", sizeof(szBuffer) - 1))
     {
         // Assuming ReadSharedMemory returns an NTSTATUS
         ReadSharedMemory(); // call function to read shared memory
@@ -318,7 +320,6 @@ NTSTATUS OnIRPWrite(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
         }
     }
     
-
     pIrp->IoStatus.Status = STATUS_SUCCESS;
     pIrp->IoStatus.Information = strlen(szBuffer);
     IoCompleteRequest(pIrp, IO_NO_INCREMENT);
@@ -347,6 +348,8 @@ NTSTATUS OnMajorFunctionCall(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
     return status;
 }
 
+
+// Unload routine // good and done 
 VOID OnDriverUnload(IN PDRIVER_OBJECT pDriverObject)
 {
     UNREFERENCED_PARAMETER(pDriverObject);
