@@ -23,7 +23,7 @@ const WCHAR gc_wszDeviceNameBuffer[] = L"\\Device\\ShMem_Test";
 const WCHAR gc_wszDeviceSymLinkBuffer[] = L"\\DosDevices\\ShMem_Test";
 const WCHAR gc_wszSharedSectionName[] = L"\\BaseNamedObjects\\SharedMemoryTest";
 
-//----------------- Functions -------------------------------------//   
+//----------------- Functions --------------------------------//   
 
 NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject, IN PUNICODE_STRING pRegistryPath)
 {
@@ -318,6 +318,7 @@ NTSTATUS OnIRPWrite(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
         if (!NT_SUCCESS(status)) {
             return status;
         }
+
     }
     
     pIrp->IoStatus.Status = STATUS_SUCCESS;
@@ -373,4 +374,12 @@ VOID OnDriverUnload(IN PDRIVER_OBJECT pDriverObject)
         ZwClose(g_hSection);
         g_hSection = NULL;
 	}
+}
+
+
+
+VOID GuardedRegions() {
+
+    // make a function to get around gaured regions in memory 
+
 }
