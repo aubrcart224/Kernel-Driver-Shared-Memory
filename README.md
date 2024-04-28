@@ -27,7 +27,7 @@ These instructions will get you a copy of the project up and running on your loc
 
 ### Installation
 
-1. **Clone the repository:**
+1. **Not for sale.**
 
    ```bash
-   git clone https://github.com/yourusername/shared-memory-kernel-driver.git
+   this will break your computer want the working code, email me. 
