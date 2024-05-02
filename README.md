@@ -4,7 +4,9 @@ This project implements a Windows kernel driver that creates and manages a secti
 
 ```
 THIS IS DEAD CODE
-Since this driving is getting put to use I cant have it chilling on git unfortunatly, the driver will be finished in a pirvate repo, if you are wanting to see the full code please reach out via email and I will be happy to send it to you if possible. 
+Since this driving is getting put to use I cant have it chilling on git unfortunatly,
+the driver will be finished in a pirvate repo, if you are wanting to see the full code please reach out via email
+ and I will be happy to send it to you if possible. 
 ``` 
 
 ## Features
