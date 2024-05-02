@@ -25,6 +25,7 @@ const WCHAR gc_wszSharedSectionName[] = L"\\BaseNamedObjects\\SharedMemoryTest";
 
 //----------------- Functions --------------------------------//   
 
+// Driver entry point
 NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject, IN PUNICODE_STRING pRegistryPath)
 {
     // Process params
@@ -47,8 +48,8 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject, IN PUNICODE_STRING pRegist
 
     // Normalize name and symbolic link.
     UNICODE_STRING deviceNameUnicodeString, deviceSymLinkUnicodeString;
-    RtlInitUnicodeString(&deviceNameUnicodeString, gc_wszDeviceNameBuffer);
-    RtlInitUnicodeString(&deviceSymLinkUnicodeString, gc_wszDeviceSymLinkBuffer);
+    RtlInitUnicodeString(&deviceNameUnicodeString, gc_wszDeviceNameBuffer); 
+    RtlInitUnicodeString(&deviceSymLinkUnicodeString, gc_wszDeviceSymLinkBuffer); 
 
     // Create the device.
     PDEVICE_OBJECT pDeviceObject = NULL;
@@ -142,16 +143,17 @@ NTSTATUS CreateSharedMemory() {
 
     NTSTATUS ntStatus = STATUS_UNSUCCESSFUL;
     UNICODE_STRING uSectionName = { 0 };
-    RtlInitUnicodeString(&uSectionName, gc_wszSharedSectionName);
     OBJECT_ATTRIBUTES objAttr = { 0 };
+    LARGE_INTEGER lMaxSize;
+
+	// init section name and obj attributes
+    RtlInitUnicodeString(&uSectionName, gc_wszSharedSectionName);
     InitializeObjectAttributes(&objAttr, &uSectionName, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
 
-
-    LARGE_INTEGER lMaxSize;
+	// Set the maximum size of the shared memory
     lMaxSize.HighPart = 0;
-    lMaxSize.LowPart = 1024 * 10;
-
-
+    lMaxSize.LowPart = SHARED_MEMORY_SIZE; //1024 * 10;
+    
     //create section
     ntStatus = ZwCreateSection(&g_hSection, SECTION_ALL_ACCESS, &objAttr, &lMaxSize, PAGE_READWRITE, SEC_COMMIT, NULL);
     if (ntStatus != STATUS_SUCCESS) {
@@ -160,65 +162,32 @@ NTSTATUS CreateSharedMemory() {
     }
 
     //map section
+	PVOID baseAddress = NULL;
+	SIZE_T viewSize = SHARED_MEMORY_SIZE; // 1024 * 10
+    ntStatus = ZwMapViewOfSection(g_hSection, NtCurrentProcess(), &baseAddress, 0, viewSize, NULL, &viewSize, ViewUnmap, 0, PAGE_READWRITE);
     if (ntStatus != STATUS_SUCCESS)
     {
         DbgPrint("ZwCreateSection fail! Status: %p\n", ntStatus);
-        return ntStatus;
-    }
-    DbgPrint("ZwCreateSection completed!\n");
-
-    // --------------- section view (commented out for now) --------------------------------
-    /*
-    // Create a security descriptor and ACL for the shared memory
-    PACL pACL = NULL;
-    PSECURITY_DESCRIPTOR pSecurityDescriptor = { 0 };
-    ntStatus = CreateStandardSCAndACL(&pSecurityDescriptor, &pACL);
-    if (ntStatus != STATUS_SUCCESS)
-    {
-        DbgPrint("CreateStandardSCAndACL fail! Status: %p\n", ntStatus);
-        ObDereferenceObject(g_pSectionObj);
-        ZwClose(g_hSection);
+		ZwClose(g_hSection);
+		g_hSection = NULL;
         return ntStatus;
     }
 
-    ExFreePool(pACL); //free pool
-    ExFreePool(pSecurityDescriptor);
+	g_pSharedSection = baseAddress; //set global pointer to shared memory 
+    DbgPrint("Shared memory created and mapped successfully at address %p\n");
 
-
-    //--------------------------------------------------------------------------
-    //create section view
-    SIZE_T ulViewSize = 0;
-    ntStatus = ZwMapViewOfSection(g_hSection, NtCurrentProcess(), &g_pSharedSection, 0, lMaxSize.LowPart, NULL, &ulViewSize, ViewShare, 0, PAGE_READWRITE | PAGE_NOCACHE);
-    if (ntStatus != STATUS_SUCCESS)
-    {
-        DbgPrint("ZwMapViewOfSection fail! Status: %p\n", ntStatus);
-        ObDereferenceObject(g_pSectionObj);
-        ZwClose(g_hSection);
-        return ntStatus;
-    }
-    DbgPrint("ZwMapViewOfSection completed!\n");
-
-    PCHAR TestString = "Message from kernel";
-    memcpy(g_pSharedSection, TestString, 19);
-    ReadSharedMemory();
-
-    return ntStatus;
-    */
-
+    // Initialize the shared memory
+    RtlZeroMemory(g_pSharedSection, SHARED_MEMORY_SIZE); 
 
     // Write a test message to the shared memory
     PCHAR TestString = "Message from kernel";
-    memcpy(g_pSharedSection, TestString, strlen(TestString) + 1);  // +1 to include null terminator 
-    ReadSharedMemory();
+    memcpy(g_pSharedSection, TestString, strlen(TestString) + 1);  // +1 to include null terminator  
 
-    return ntStatus;
+    return ntStatus; 
 }
 
-//maybe make a fucntion to call here top map shared memory 
-NTSTATUS MapSharedMemory() {}
-
 // Read from the shared memory
-VOID ReadSharedMemory() {
+NTSTATUS ReadSharedMemory(void) {
 	
     //initialize shared memory
     if (!g_hSection) {
@@ -232,27 +201,30 @@ VOID ReadSharedMemory() {
         //ZwUnmapViewOfSection(NtCurrentProcess(), g_pSharedSection);// unmap shared mem, return handle, specify unmap process
         if (unmapStatus != STATUS_SUCCESS) {
             DbgPrint("Failed to unmap shared memory: %p\n", unmapStatus);
-            return;
+            return unmapStatus; 
         }
         g_pSharedSection = NULL; //clear pointer after unmapping
     }
-    else {
-        //map shared memory
-        DbgPrint(("Reading from shared memory: %s\n", (PCHAR)g_SharedMemory));
-        SIZE_T ulViewSize = 10240; // 1024 * 10
-        NTSTATUS ntStatus = ZwMapViewOfSection(g_hSection, NtCurrentProcess(), &g_pSharedSection, 0, ulViewSize, NULL, &ulViewSize, ViewShare, 0, PAGE_READWRITE | PAGE_NOCACHE);
-        if (ntStatus != STATUS_SUCCESS)
-        {
-            DbgPrint("ZwMapViewOfSection fail! Status: %p\n", ntStatus);
-            ZwClose(g_hSection);
-            return;
-        }
-        DbgPrint("ZwMapViewOfSection completed!\n");
-        DbgPrint("Shared memory read data: %s\n", (PCHAR)g_pSharedSection);
+
+    //map shared memory
+
+    DbgPrint(("Reading from shared memory: %s\n", (PCHAR)g_SharedMemory));
+
+    SIZE_T ulViewSize = 10240; // 1024 * 10
+    NTSTATUS ntStatus = ZwMapViewOfSection(g_hSection, NtCurrentProcess(), &g_pSharedSection, 0, ulViewSize, NULL, &ulViewSize, ViewShare, 0, PAGE_READWRITE | PAGE_NOCACHE);
+    if (ntStatus != STATUS_SUCCESS)
+    {
+        DbgPrint("ZwMapViewOfSection fail! Status: %p\n", ntStatus);
+        ZwClose(g_hSection);
+        return ntStatus;
     }
+    DbgPrint("ZwMapViewOfSection completed!\n");
+    DbgPrint("Shared memory read data: %s\n", (PCHAR)g_pSharedSection);
+    return STATUS_SUCCESS; 
+
 }
 
-//dead func for now writing is a dectection vector 
+//Dead func for now writing is a dectection vector 
 NTSTATUS WriteSharedMemory(PVOID Data, SIZE_T Size) {
 }
 
@@ -260,7 +232,6 @@ NTSTATUS WriteSharedMemory(PVOID Data, SIZE_T Size) {
 NTSTATUS InitializeSecurityDescriptor() {
     PSECURITY_DESCRIPTOR pSecurityDescriptor;
     NTSTATUS status;
-
 
     // Allocate memory for the security descriptor
     pSecurityDescriptor = ExAllocatePoolWithTag(NonPagedPoolNx, SECURITY_DESCRIPTOR_MIN_LENGTH, 'sdct');
@@ -273,27 +244,57 @@ NTSTATUS InitializeSecurityDescriptor() {
     RtlZeroMemory(pSecurityDescriptor, SECURITY_DESCRIPTOR_MIN_LENGTH);
 
 
-    // setup ALCs, SIDs, etc. // might move to another function later 
-    status = SetupSecurityAttributes(pSecurityDescriptor); // call function to set up security attributes
-
+    //Initialize and set up security attributes
+    status = RtlCreateSecurityDescriptor(pSecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);  // call function to set up security attributes
     if (!NT_SUCCESS(status)) {
-        ExFreePool(pSecurityDescriptor);
+		ExFreePool(pSecurityDescriptor); // Free the memory if the function fails
         return status;
     }
 
-    // Set up ACLs, SIDs, etc., here
-    //NTSTATUS status = RtlCreateSecurityDescriptor(pSecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);
+	//set up security attributes
+    status = SetupSecurityAttributes(pSecurityDescriptor); 
+    if (!NT_SUCCESS(status)) { 
+        ExFreePool(pSecurityDescriptor); 
+        return status; 
+    } 
 
-    NTSTATUS SetupSecurityAttributes(PSECURITY_DESCRIPTOR pSecurityDescriptor); {
-        // Assuming implementation exists that creates and sets SIDs and ACLs
-        // This function should handle all necessary security setup for the shared memory
-        return STATUS_SUCCESS;
+    // Use the security descriptor where needed, then free when done
 
+    ExFreePool(pSecurityDescriptor);
+    return STATUS_SUCCESS;
+    
+}
+ 
+NTSTATUS SetupSecurityAttributes(PSECURITY_DESCRIPTOR pSecurityDescriptor) {
+
+    NTSTATUS status = STATUS_SUCCESS; 
+    PACL pAcl = NULL; 
+    BOOLEAN bAclPresent, bAclDefaulted; 
+
+    // Assuming implementation exists that creates and sets SIDs and ACLs
+    // Example:
+    // PCHAR pAclBuffer = ExAllocatePoolWithTag(NonPagedPool, AclSize, 'dacl');
+    // InitializeAcl(pAcl, AclSize, ACL_REVISION);
+
+
+    // Query DACL from the security descriptor (if already existing)
+    status = RtlGetDaclSecurityDescriptor(pSecurityDescriptor, &bAclPresent, &pAcl, &bAclDefaulted);
+    if (NT_SUCCESS(status) && bAclPresent && pAcl) {
+        // Modify DACL as necessary
+    }
+    else {
+        // Create a new DACL and set it to the security descriptor
     }
 
+    // Free resources if allocated
+    if (pAcl) {
+        ExFreePool(pAcl);
+    }
+
+    return status;
 
 }
-    
+
 // Create a security descriptor and ACL for the shared memory
 NTSTATUS OnIRPWrite(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
 {
@@ -301,25 +302,16 @@ NTSTATUS OnIRPWrite(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
 
     char szBuffer[255] = { 0 };
     strncpy(szBuffer, pIrp->AssociatedIrp.SystemBuffer, sizeof(szBuffer) - 1); // Secure copying
+	szBuffer[sizeof(szBuffer) - 1] = '\0'; // Ensure null-termination of string
     DbgPrint("User message received: %s(%u)", szBuffer, strlen(szBuffer));
-    /*
-    if (!strcmp(szBuffer, "read_shared_memory"))
+   
+    if (!strncmp(szBuffer, "read_shared_memory", strlen("read_shared_memory")))
     {
-        ReadSharedMemory();
-    }
-    */
-
-    //maybe use this idk yet 
-    if (!strncmp(szBuffer, "read_shared_memory", sizeof(szBuffer) - 1))
-    {
-        // Assuming ReadSharedMemory returns an NTSTATUS
-        ReadSharedMemory(); // call function to read shared memory
-        NTSTATUS status = ReadSharedMemory();
+        NTSTATUS status = ReadSharedMemory(); // Assume it returns an NTSTATUS 
         if (!NT_SUCCESS(status)) {
-            return status;
+            return status; 
         }
-
-    }
+    } 
     
     pIrp->IoStatus.Status = STATUS_SUCCESS;
     pIrp->IoStatus.Information = strlen(szBuffer);
@@ -349,7 +341,6 @@ NTSTATUS OnMajorFunctionCall(PDEVICE_OBJECT pDriverObject, PIRP pIrp)
     return status;
 }
 
-
 // Unload routine // good and done 
 VOID OnDriverUnload(IN PDRIVER_OBJECT pDriverObject)
 {
@@ -370,16 +361,16 @@ VOID OnDriverUnload(IN PDRIVER_OBJECT pDriverObject)
 	}
 
     // Close the section handle if open
-    if (g_hSection){
-        ZwClose(g_hSection);
-        g_hSection = NULL;
+    if (g_hSection){ 
+        ZwClose(g_hSection); 
+        g_hSection = NULL; 
 	}
 }
 
 
-
 VOID GuardedRegions() {
 
-    // make a function to get around gaured regions in memory 
+    // make a function to get around gaured regions in mem
 
-}
+} 
+
