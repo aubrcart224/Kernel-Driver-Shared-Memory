@@ -2,9 +2,11 @@
 
 This project implements a Windows kernel driver that creates and manages a section of shared memory. This allows kernel-mode processes to share data efficiently with each other or with user-mode processes. The driver demonstrates fundamental operations such as creating a device, mapping shared memory, and handling I/O requests.
 
-
 ```
-This does not work will be working soon I hope
+THIS IS DEAD CODE
+Since this driving is getting put to use I cant have it chilling on git unfortunatly,
+the driver will be finished in a pirvate repo, if you are wanting to see the full code please reach out via email
+ and I will be happy to send it to you if possible. 
 ``` 
 
 ## Features
