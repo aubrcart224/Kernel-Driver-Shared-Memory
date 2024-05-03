@@ -13,7 +13,7 @@ void DriverUnload(_In_ PDRIVER_OBJECT DriverObject);
 
 
 // Declaration of a function to initialize shared memory
-NTSTATUS InitializeSharedMemory(_In_ PDRIVER_OBJECT DriverObject);
+NTSTATUS InitializeSharedMemory(_In_ PDRIVER_OBJECT DriverObject); 
 
 /*
 int main() {

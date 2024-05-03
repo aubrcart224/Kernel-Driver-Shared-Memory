@@ -239,10 +239,8 @@ NTSTATUS InitializeSecurityDescriptor() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-
     // Zero out the memory to avoid uninitialized memory
     RtlZeroMemory(pSecurityDescriptor, SECURITY_DESCRIPTOR_MIN_LENGTH);
-
 
     //Initialize and set up security attributes
     status = RtlCreateSecurityDescriptor(pSecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);  // call function to set up security attributes
@@ -367,10 +365,41 @@ VOID OnDriverUnload(IN PDRIVER_OBJECT pDriverObject)
 	}
 }
 
-
+// thread stuff in here need to work out for later
 VOID GuardedRegions() {
 
     // make a function to get around gaured regions in mem
+    NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath); {
+        // Initialize driver
+        // Possibly set up initial hidden threads here
+        HideThreads(); // Custom function to hide threads
+        return STATUS_SUCCESS;
+    }
+
+    void SomeThreadFunction(); {
+        // Function that gets called in a new thread
+        // Implement hiding mechanisms when this thread is created
+    }
+
+    NTSTATUS CreateHiddenThread(); {
+        HANDLE hThread;
+        // Create a thread
+        PsCreateSystemThread(&hThread, ..., (PKSTART_ROUTINE)SomeThreadFunction, ...);
+        // Immediately manipulate or hide the thread
+        HideSpecificThread(hThread);
+        return STATUS_SUCCESS;
+    }
+
+    void HideThreads(); {
+        // Code to manipulate thread visibility
+        // This might involve DKOM or other techniques
+    }
+
+    void HideSpecificThread(HANDLE hThread); {
+        // Code to hide a specific thread, possibly manipulating its properties
+    }
+
+
 
 } 
 
